@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PENDATAAN ANAK DISABILITAS TERPADU</title>
+    <!-- Tailwind CSS v4 CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght=300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #f8fafc;
+        }
+        .morph-page {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: scale(0.98);
+            opacity: 0;
+            display: none;
+        }
+        .morph-page.active {
+            transform: scale(1);
+            opacity: 1;
+            display: block;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        @media print {
+            body { background-color: #ffffff !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            #app-container, .fixed, #modal-detail-anak, #modal-form-anak, #modal-ganti-password { display: none !important; }
+            
+            body.printing-card #print-area-a5 {
+                display: block !important;
+                width: 148mm; height: 210mm; padding: 12mm; margin: 0 auto;
+                box-sizing: border-box; background-color: #ffffff !important;
+                border: 1px solid #cbd5e1; border-radius: 12px; position: relative;
+            }
+            body.printing-card @page { size: A5 portrait; margin: 0; }
+        }
+        #print-area-a5 { display: none; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased overflow-x-hidden">
+
+    <div id="app-container">
+        <!-- 1. HALAMAN LOGIN -->
+        <div id="page-login" class="min-h-screen flex flex-col justify-center items-center bg-white relative px-4 transition-all duration-500">
+            <div class="absolute inset-0 bg-radial from-blue-50 via-transparent to-transparent opacity-70"></div>
+            <div class="w-full max-w-md bg-white border border-slate-100 rounded-3xl p-8 shadow-2xl shadow-blue-100/50 relative z-10">
+                <div class="text-center mb-8">
+                    <div class="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30 animate-bounce">
+                        <i class="fa-solid fa-id-card-clip text-white text-2xl"></i>
+                    </div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">APLIKASI PENDATAAN ANAK</h1>
+                    <p class="text-sm text-blue-600 font-semibold mt-1">Sistem Informasi Disabilitas Terpadu</p>
+                </div>
+
+                <form id="login-form" class="space-y-5" onsubmit="handleLogin(event)">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Nama Admin</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400"><i class="fa-solid fa-user"></i></span>
+                            <input type="text" id="username" required class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-all" placeholder="Masukkan nama admin...">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Password</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400"><i class="fa-solid fa-lock"></i></span>
+                            <input type="password" id="password" required class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-all" placeholder="••••••">
+                        </div>
+                    </div>
+                    <div id="login-error" class="text-red-500 text-xs font-medium hidden text-center animate-pulse">
+                        <i class="fa-solid fa-circle-exclamation mr-1"></i> Admin atau Password salah!
+                    </div>
+                    <button type="submit" class="w-full py-3.5 bg-blue-600 text-white font-semibold rounded-xl text-sm shadow-lg shadow-blue-600/30 hover:bg-blue-700 active:scale-[0.98] transition-all cursor-pointer">
+                        Masuk Sistem <i class="fa-solid fa-arrow-right-to-bracket ml-2"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 2. DASHBOARD MAIN (SIDEBAR + CONTENT) -->
+        <div id="page-dashboard-main" class="min-h-screen hidden flex-col lg:flex-row bg-slate-50">
+            <!-- NAVIGATION SIDEBAR -->
+            <aside class="w-full lg:w-72 bg-white border-r border-slate-100 flex flex-col shrink-0 z-20">
+                <div class="p-6 border-b border-slate-100 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/20">
+                            PDA
+                        </div>
+                        <div>
+                            <h2 class="text-sm font-bold text-slate-900 leading-tight">DISABILITAS</h2>
+                            <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Sistem Pendataan</span>
+                        </div>
+                    </div>
+                </div>
+
+                <nav class="flex-1 p-4 space-y-1.5 overflow-y-auto no-scrollbar">
+                    <span class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Menu Utama</span>
+                    <button onclick="switchTab('tab-dashboard')" id="nav-tab-dashboard" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer bg-blue-50 text-blue-600">
+                        <i class="fa-solid fa-chart-pie w-5"></i> Dashboard
+                    </button>
+                    <button onclick="switchTab('tab-anak')" id="nav-tab-anak" class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-all cursor-pointer">
+                        <i class="fa-solid fa-children w-5"></i> Data Anak Disabilitas
+                    </button>
+                </nav>
+
+                <div class="p-4 border-t border-slate-100 bg-slate-50/50">
+                    <div class="flex items-center justify-between p-2 bg-white border border-slate-100 rounded-xl">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-600"><i class="fa-solid fa-user"></i></div>
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-800">Administrator</h4>
+                                <p class="text-[10px] text-green-500 font-medium">Online</p>
+                            </div>
+                        </div>
+                        <button onclick="handleLogout()" class="text-slate-400 hover:text-red-500 p-2 cursor-pointer" title="Keluar"><i class="fa-solid fa-power-off"></i></button>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- MAIN CONTENT AREA -->
+            <main class="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+                <header class="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-6 lg:px-8 shrink-0">
+                    <h1 id="main-title" class="text-lg font-extrabold text-slate-900 tracking-tight uppercase">DASHBOARD UTAMA SISTEM</h1>
+                </header>
+
+                <div class="flex-1 p-6 lg:p-8 overflow-y-auto">
+                    <!-- TAB 1: DASHBOARD -->
+                    <div id="tab-dashboard" class="morph-page active space-y-8">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                            <div class="bg-gradient-to-br from-indigo-500 to-purple-600 p-6 rounded-2xl text-white shadow-xl shadow-indigo-500/20 relative overflow-hidden">
+                                <p class="text-xs font-bold text-indigo-100 uppercase tracking-wider">Total Anak Terdata</p>
+                                <h3 id="dash-total-anak" class="text-4xl font-black mt-2">0</h3>
+                            </div>
+                            <div class="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-2xl text-white shadow-xl shadow-emerald-500/20 relative overflow-hidden">
+                                <p class="text-xs font-bold text-emerald-100 uppercase tracking-wider">Anak Bersekolah</p>
+                                <h3 id="dash-anak-sekolah" class="text-4xl font-black mt-2">0</h3>
+                            </div>
+                            <div class="bg-gradient-to-br from-amber-500 to-orange-600 p-6 rounded-2xl text-white shadow-xl shadow-amber-500/20 relative overflow-hidden">
+                                <p class="text-xs font-bold text-amber-100 uppercase tracking-wider">Tidak/Belum Sekolah</p>
+                                <h3 id="dash-anak-tidak-sekolah" class="text-4xl font-black mt-2">0</h3>
+                            </div>
+                            <div class="bg-gradient-to-br from-blue-500 to-cyan-600 p-6 rounded-2xl text-white shadow-xl shadow-blue-500/20 relative overflow-hidden">
+                                <p class="text-xs font-bold text-blue-100 uppercase tracking-wider">Ragam Disabilitas</p>
+                                <h3 id="dash-total-ragam" class="text-4xl font-black mt-2">0</h3>
+                            </div>
+                        </div>
+
+                        <!-- REKAP KELOMPOK USIA & JK -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="bg-white border border-slate-100 rounded-2xl p-6 shadow-xs">
+                                <h3 class="text-base font-bold text-slate-900 mb-4">Rekapitulasi Jenis Kelamin</h3>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div class="bg-gradient-to-br from-blue-600 to-sky-500 p-4 rounded-xl text-white text-center">
+                                        <div class="text-xs font-bold uppercase">Laki-Laki</div>
+                                        <div id="dash-jk-laki" class="text-3xl font-black mt-1">0</div>
+                                    </div>
+                                    <div class="bg-gradient-to-br from-pink-600 to-rose-500 p-4 rounded-xl text-white text-center">
+                                        <div class="text-xs font-bold uppercase">Perempuan</div>
+                                        <div id="dash-jk-perempuan" class="text-3xl font-black mt-1">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white border border-slate-100 rounded-2xl p-6 shadow-xs">
+                                <h3 class="text-base font-bold text-slate-900 mb-4">Tindakan Cepat</h3>
+                                <button onclick="switchTab('tab-anak'); openAnakModal();" class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md transition-all">
+                                    <i class="fa-solid fa-plus mr-2"></i> Tambah Data Anak Baru
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 2: DATA ANAK -->
+                    <div id="tab-anak" class="morph-page space-y-6">
+                        <div class="bg-white border border-slate-100 rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button onclick="openAnakModal()" class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer">
+                                    <i class="fa-solid fa-user-plus mr-1.5"></i> Input Data Anak
+                                </button>
+                                <button onclick="exportToExcel()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer">
+                                    <i class="fa-solid fa-file-excel mr-1.5"></i> Export Excel (CSV)
+                                </button>
+                            </div>
+                            <div class="relative max-w-xs w-full">
+                                <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400"><i class="fa-solid fa-magnifying-glass text-xs"></i></span>
+                                <input type="text" id="search-anak" oninput="renderAnakTable()" class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-blue-500 font-medium" placeholder="Cari nama anak / NIK...">
+                            </div>
+                        </div>
+
+                        <div class="bg-white border border-slate-100 rounded-2xl shadow-xs overflow-hidden">
+                            <div class="p-5 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+                                <h3 class="text-sm font-bold text-slate-900">Daftar Anak Terdata</h3>
+                                <span class="text-xs text-slate-400 font-semibold" id="anak-count-info">Menampilkan 0 anak</span>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-sm">
+                                    <thead>
+                                        <tr class="bg-slate-50/70 text-slate-400 font-bold border-b border-slate-100 text-xs uppercase tracking-wider">
+                                            <th class="p-4">Nama Lengkap</th>
+                                            <th class="p-4">JK</th>
+                                            <th class="p-4">Usia</th>
+                                            <th class="p-4">Ragam Disabilitas</th>
+                                            <th class="p-4">Pendidikan</th>
+                                            <th class="p-4">Desa/Kecamatan</th>
+                                            <th class="p-4 text-center">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="anak-main-table" class="divide-y divide-slate-100 text-slate-700 font-medium">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- MODAL FORM INPUT/EDIT ANAK -->
+    <div id="modal-form-anak" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs hidden items-center justify-center p-4">
+        <div class="bg-white w-full max-w-4xl rounded-3xl overflow-hidden shadow-2xl border border-slate-100 max-h-[92vh] flex flex-col">
+            <div class="bg-blue-600 p-5 text-white flex justify-between items-center">
+                <h3 id="anak-modal-title" class="text-base font-bold">Input Data Anak Disabilitas</h3>
+                <button onclick="closeAnakModal()" class="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 text-white cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="disabilityForm" class="flex-1 overflow-y-auto p-6 space-y-6 text-xs no-scrollbar" onsubmit="handleAnakSubmit(event)">
+                <input type="hidden" id="anak-id">
+                
+                <!-- 1. DATA DIRI -->
+                <h4 class="font-bold text-blue-600 uppercase tracking-wider border-b pb-1">1. Data Diri Anak</h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Nama Lengkap *</label>
+                        <input type="text" id="inp-nama" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Jenis Kelamin *</label>
+                        <select id="inp-jk" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white">
+                            <option value="Laki-laki">Laki-laki</option>
+                            <option value="Perempuan">Perempuan</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Tempat Lahir</label>
+                        <input type="text" id="inp-tempat-lahir" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Tanggal Lahir *</label>
+                        <input type="date" id="inp-tanggal-lahir" required onchange="hitungUsiaOtomatis(this.value)" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Usia (Otomatis)</label>
+                        <input type="text" id="inp-usia" readonly class="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl font-bold text-slate-600">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">NIK</label>
+                        <input type="number" id="inp-nik" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">No Kartu Keluarga (KK)</label>
+                        <input type="number" id="inp-kk" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                </div>
+
+                <!-- 2. DISABILITAS -->
+                <h4 class="font-bold text-blue-600 uppercase tracking-wider border-b pb-1">2. Informasi Disabilitas</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Ragam Disabilitas *</label>
+                        <select id="inp-ragam" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                            <option value="Fisik">Disabilitas Fisik</option>
+                            <option value="Intelektual">Disabilitas Intelektual</option>
+                            <option value="Mental">Disabilitas Mental</option>
+                            <option value="Sensorik">Disabilitas Sensorik</option>
+                            <option value="Ganda/Multi">Disabilitas Ganda/Multi</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Jenis Disabilitas Detail</label>
+                        <input type="text" id="inp-jenis" placeholder="Contoh: Tuna Netra, Autism, CP, dll." class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                </div>
+
+                <!-- 3. PENDIDIKAN -->
+                <h4 class="font-bold text-blue-600 uppercase tracking-wider border-b pb-1">3. Pendidikan</h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Tingkat Pendidikan</label>
+                        <select id="inp-tingkat-pendidikan" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                            <option value="Tidak Sekolah">Tidak Sekolah</option>
+                            <option value="PAUD/TK">PAUD / TK</option>
+                            <option value="SD/SDLB">SD / SDLB</option>
+                            <option value="SMP/SMPLB">SMP / SMPLB</option>
+                            <option value="SMA/SMALB/SMK">SMA / SMALB / SMK</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Kelas</label>
+                        <input type="text" id="inp-kelas" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Nama Sekolah</label>
+                        <input type="text" id="inp-nama-sekolah" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                </div>
+
+                <!-- 4. ALAMAT -->
+                <h4 class="font-bold text-blue-600 uppercase tracking-wider border-b pb-1">4. Alamat & Wilayah</h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="md:col-span-3">
+                        <label class="block font-bold text-slate-500 mb-1">Alamat Lengkap</label>
+                        <textarea id="inp-alamat" rows="2" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"></textarea>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Desa / Kelurahan</label>
+                        <input type="text" id="inp-desa" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Kecamatan</label>
+                        <input type="text" id="inp-kecamatan" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Kabupaten / Kota</label>
+                        <input type="text" id="inp-kabupaten" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                </div>
+
+                <!-- 5. ORANG TUA & SOSIAL -->
+                <h4 class="font-bold text-blue-600 uppercase tracking-wider border-b pb-1">5. Orang Tua & Layanan</h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Layanan Kesehatan</label>
+                        <input type="text" id="inp-layanan-kes" placeholder="BPJS, Puskesmas" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Desil Ekonomi</label>
+                        <select id="inp-desil" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                            <option value="Desil 1">Desil 1 (Sangat Miskin)</option>
+                            <option value="Desil 2">Desil 2 (Miskin)</option>
+                            <option value="Desil 3">Desil 3 (Hampir Miskin)</option>
+                            <option value="Desil 4">Desil 4 (Rentan Miskin)</option>
+                            <option value="Desil 5+">Desil 5 ke atas</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">No. HP Orang Tua / Wali *</label>
+                        <input type="tel" id="inp-hp-wali" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Nama Ayah</label>
+                        <input type="text" id="inp-ayah-nama" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Nama Ibu</label>
+                        <input type="text" id="inp-ibu-nama" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-500 mb-1">Nama Pendamping</label>
+                        <input type="text" id="inp-pendamping-nama" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                    </div>
+                </div>
+
+                <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+                    <button type="button" onclick="closeAnakModal()" class="px-4 py-2 bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer">Batal</button>
+                    <button type="submit" class="px-6 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-md cursor-pointer">Simpan Data</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL DETAIL ANAK -->
+    <div id="modal-detail-anak" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs hidden items-center justify-center p-4">
+        <div class="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl border border-slate-100 flex flex-col">
+            <div class="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 text-white flex justify-between items-center">
+                <div>
+                    <h3 id="det-modal-nama" class="text-lg font-black tracking-tight">Nama Anak</h3>
+                    <p class="text-xs text-blue-100 font-medium">Rincian Komprehensif Data Anak</p>
+                </div>
+                <button onclick="closeDetailModal()" class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 text-white cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 space-y-4 text-xs">
+                <div class="grid grid-cols-2 gap-4">
+                    <div><span class="text-slate-400 font-semibold block">NIK:</span> <span id="det-nik" class="font-bold text-slate-800">-</span></div>
+                    <div><span class="text-slate-400 font-semibold block">Jenis Kelamin:</span> <span id="det-jk" class="font-bold text-slate-800">-</span></div>
+                    <div><span class="text-slate-400 font-semibold block">Tgl Lahir / Usia:</span> <span id="det-ttl-usia" class="font-bold text-slate-800">-</span></div>
+                    <div><span class="text-slate-400 font-semibold block">Ragam Disabilitas:</span> <span id="det-ragam" class="font-bold text-slate-800">-</span></div>
+                    <div><span class="text-slate-400 font-semibold block">Pendidikan:</span> <span id="det-pendidikan" class="font-bold text-slate-800">-</span></div>
+                    <div><span class="text-slate-400 font-semibold block">Alamat / Wilayah:</span> <span id="det-wilayah" class="font-bold text-slate-800">-</span></div>
+                </div>
+            </div>
+            <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+                <input type="hidden" id="det-anak-id-hidden">
+                <button onclick="printCardFromModal()" class="px-5 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 flex items-center gap-2 cursor-pointer">
+                    <i class="fa-solid fa-print"></i> Cetak Kartu A5
+                </button>
+                <button onclick="closeDetailModal()" class="px-4 py-2 bg-slate-800 text-white font-bold rounded-xl">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CETAKAN CARD A5 -->
+    <div id="print-area-a5">
+        <div style="text-align: center; border-bottom: 2px solid #1e3a8a; padding-bottom: 8px; margin-bottom: 12px;">
+            <h2 style="font-size: 14px; font-weight: 800; color: #1e3a8a; margin: 0;">SISTEM INFORMASI DISABILITAS</h2>
+            <p style="font-size: 10px; font-weight: 600; color: #4b5563; margin: 2px 0 0 0;">KARTU RINCIAN DATA ANAK DISABILITAS</p>
+        </div>
+        <div style="font-size: 11px; space-y-2">
+            <p><strong>Nama:</strong> <span id="pr-nama"></span></p>
+            <p><strong>NIK / KK:</strong> <span id="pr-nik-kk"></span></p>
+            <p><strong>JK / Usia:</strong> <span id="pr-jk-usia"></span></p>
+            <p><strong>Ragam Disabilitas:</strong> <span id="pr-ragam"></span></p>
+            <p><strong>Pendidikan:</strong> <span id="pr-pendidikan"></span></p>
+            <p><strong>Alamat:</strong> <span id="pr-alamat"></span></p>
+            <p><strong>HP Ortu/Wali:</strong> <span id="pr-hp"></span></p>
+        </div>
+    </div>
+
+    <script>
+        // STATE MANAGEMENT (LOCAL STORAGE)
+        let listData = JSON.parse(localStorage.getItem('dataDisabilitas')) || [];
+
+        // INIT APP
+        window.addEventListener('DOMContentLoaded', () => {
+            renderDashboard();
+            renderAnakTable();
+        });
+
+        // LOGIN & LOGOUT
+        function handleLogin(e) {
+            e.preventDefault();
+            const u = document.getElementById('username').value;
+            const p = document.getElementById('password').value;
+            if (u === 'admin' && p === '123456') {
+                document.getElementById('page-login').classList.add('hidden');
+                document.getElementById('page-dashboard-main').classList.remove('hidden');
+                document.getElementById('page-dashboard-main').classList.add('flex');
+            } else {
+                document.getElementById('login-error').classList.remove('hidden');
+            }
+        }
+
+        function handleLogout() {
+            document.getElementById('page-dashboard-main').classList.add('hidden');
+            document.getElementById('page-dashboard-main').classList.remove('flex');
+            document.getElementById('page-login').classList.remove('hidden');
+        }
+
+        // SWITCH TAB (MORPH ANIMATION EFFECT)
+        function switchTab(tabId) {
+            document.querySelectorAll('.morph-page').forEach(p => p.classList.remove('active'));
+            setTimeout(() => {
+                document.querySelectorAll('.morph-page').forEach(p => p.style.display = 'none');
+                const target = document.getElementById(tabId);
+                target.style.display = 'block';
+                setTimeout(() => target.classList.add('active'), 50);
+            }, 200);
+
+            document.querySelectorAll('.nav-btn').forEach(b => {
+                b.classList.remove('bg-blue-50', 'text-blue-600');
+                b.classList.add('text-slate-500');
+            });
+            const activeBtn = document.getElementById(`nav-${tabId}`);
+            if (activeBtn) {
+                activeBtn.classList.remove('text-slate-500');
+                activeBtn.classList.add('bg-blue-50', 'text-blue-600');
+            }
+        }
+
+        // HITUNG USIA OTOMATIS
+        function hitungUsiaOtomatis(dobString) {
+            if (!dobString) return;
+            const dob = new Date(dobString);
+            const today = new Date();
+            let years = today.getFullYear() - dob.getFullYear();
+            let months = today.getMonth() - dob.getMonth();
+            if (months < 0 || (months === 0 && today.getDate() < dob.getDate())) {
+                years--;
+                months += 12;
+            }
+            document.getElementById('inp-usia').value = `${years} Tahun ${months} Bulan`;
+        }
+
+        // RENDER DASHBOARD STATS
+        function renderDashboard() {
+            document.getElementById('dash-total-anak').innerText = listData.length;
+            const sekolah = listData.filter(a => a.tingkatPendidikan && a.tingkatPendidikan !== 'Tidak Sekolah').length;
+            document.getElementById('dash-anak-sekolah').innerText = sekolah;
+            document.getElementById('dash-anak-tidak-sekolah').innerText = listData.length - sekolah;
+
+            const ragamSet = new Set(listData.map(a => a.ragamDisabilitas).filter(Boolean));
+            document.getElementById('dash-total-ragam').innerText = ragamSet.size;
+
+            document.getElementById('dash-jk-laki').innerText = listData.filter(a => a.jenisKelamin === 'Laki-laki').length;
+            document.getElementById('dash-jk-perempuan').innerText = listData.filter(a => a.jenisKelamin === 'Perempuan').length;
+        }
+
+        // RENDER TABEL DATA ANAK
+        function renderAnakTable() {
+            const query = document.getElementById('search-anak').value.toLowerCase();
+            const tableBody = document.getElementById('anak-main-table');
+            tableBody.innerHTML = '';
+
+            const filtered = listData.filter(a => 
+                (a.nama || '').toLowerCase().includes(query) || 
+                (a.nik || '').toString().includes(query)
+            );
+
+            document.getElementById('anak-count-info').innerText = `Menampilkan ${filtered.length} anak`;
+
+            if (filtered.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-xs text-slate-400">Belum ada records data anak.</td></tr>`;
+                return;
+            }
+
+            filtered.forEach(a => {
+                tableBody.innerHTML += `
+                    <tr class="hover:bg-slate-50/50 transition-all text-xs">
+                        <td class="p-4 font-bold text-slate-900 cursor-pointer hover:text-blue-600" onclick="viewAnakDetail(${a.id})">${a.nama}</td>
+                        <td class="p-4">${a.jenisKelamin}</td>
+                        <td class="p-4">${a.usia || '-'}</td>
+                        <td class="p-4 font-semibold text-blue-600">${a.ragamDisabilitas || '-'}</td>
+                        <td class="p-4">${a.tingkatPendidikan || '-'}</td>
+                        <td class="p-4">${a.desa || '-'}/ ${a.kecamatan || '-'}</td>
+                        <td class="p-4 text-center">
+                            <div class="flex items-center justify-center gap-1.5">
+                                <button onclick="viewAnakDetail(${a.id})" class="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg" title="Lihat Detail"><i class="fa-solid fa-eye"></i></button>
+                                <button onclick="editAnakData(${a.id})" class="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-100 rounded-lg" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
+                                <button onclick="deleteAnakData(${a.id})" class="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg" title="Hapus"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        // FORM MODAL HANDLERS
+        function openAnakModal() {
+            document.getElementById('disabilityForm').reset();
+            document.getElementById('anak-id').value = '';
+            document.getElementById('anak-modal-title').innerText = 'Input Data Anak Disabilitas';
+            document.getElementById('modal-form-anak').classList.remove('hidden');
+            document.getElementById('modal-form-anak').classList.add('flex');
+        }
+
+        function closeAnakModal() {
+            document.getElementById('modal-form-anak').classList.add('hidden');
+            document.getElementById('modal-form-anak').classList.remove('flex');
+        }
+
+        function handleAnakSubmit(e) {
+            e.preventDefault();
+            const id = document.getElementById('anak-id').value;
+
+            const payload = {
+                id: id ? parseInt(id) : Date.now(),
+                nama: document.getElementById('inp-nama').value,
+                jenisKelamin: document.getElementById('inp-jk').value,
+                tempatLahir: document.getElementById('inp-tempat-lahir').value,
+                tanggalLahir: document.getElementById('inp-tanggal-lahir').value,
+                usia: document.getElementById('inp-usia').value,
+                nik: document.getElementById('inp-nik').value,
+                kk: document.getElementById('inp-kk').value,
+                ragamDisabilitas: document.getElementById('inp-ragam').value,
+                jenisDisabilitas: document.getElementById('inp-jenis').value,
+                tingkatPendidikan: document.getElementById('inp-tingkat-pendidikan').value,
+                kelas: document.getElementById('inp-kelas').value,
+                namaSekolah: document.getElementById('inp-nama-sekolah').value,
+                alamat: document.getElementById('inp-alamat').value,
+                desa: document.getElementById('inp-desa').value,
+                kecamatan: document.getElementById('inp-kecamatan').value,
+                kabupaten: document.getElementById('inp-kabupaten').value,
+                layananKesehatan: document.getElementById('inp-layanan-kes').value,
+                desil: document.getElementById('inp-desil').value,
+                nomorHp: document.getElementById('inp-hp-wali').value,
+                namaAyah: document.getElementById('inp-ayah-nama').value,
+                namaIbu: document.getElementById('inp-ibu-nama').value,
+                namaPendamping: document.getElementById('inp-pendamping-nama').value,
+            };
+
+            if (id) {
+                const idx = listData.findIndex(a => a.id === parseInt(id));
+                listData[idx] = payload;
+            } else {
+                listData.push(payload);
+            }
+
+            localStorage.setItem('dataDisabilitas', JSON.stringify(listData));
+            closeAnakModal();
+            renderDashboard();
+            renderAnakTable();
+        }
+
+        function editAnakData(id) {
+            const a = listData.find(item => item.id === id);
+            if (!a) return;
+
+            openAnakModal();
+            document.getElementById('anak-modal-title').innerText = 'Edit Data Anak Disabilitas';
+            document.getElementById('anak-id').value = a.id;
+            document.getElementById('inp-nama').value = a.nama || '';
+            document.getElementById('inp-jk').value = a.jenisKelamin || 'Laki-laki';
+            document.getElementById('inp-tempat-lahir').value = a.tempatLahir || '';
+            document.getElementById('inp-tanggal-lahir').value = a.tanggalLahir || '';
+            document.getElementById('inp-usia').value = a.usia || '';
+            document.getElementById('inp-nik').value = a.nik || '';
+            document.getElementById('inp-kk').value = a.kk || '';
+            document.getElementById('inp-ragam').value = a.ragamDisabilitas || 'Fisik';
+            document.getElementById('inp-jenis').value = a.jenisDisabilitas || '';
+            document.getElementById('inp-tingkat-pendidikan').value = a.tingkatPendidikan || 'Tidak Sekolah';
+            document.getElementById('inp-kelas').value = a.kelas || '';
+            document.getElementById('inp-nama-sekolah').value = a.namaSekolah || '';
+            document.getElementById('inp-alamat').value = a.alamat || '';
+            document.getElementById('inp-desa').value = a.desa || '';
+            document.getElementById('inp-kecamatan').value = a.kecamatan || '';
+            document.getElementById('inp-kabupaten').value = a.kabupaten || '';
+            document.getElementById('inp-layanan-kes').value = a.layananKesehatan || '';
+            document.getElementById('inp-desil').value = a.desil || 'Desil 1';
+            document.getElementById('inp-hp-wali').value = a.nomorHp || '';
+            document.getElementById('inp-ayah-nama').value = a.namaAyah || '';
+            document.getElementById('inp-ibu-nama').value = a.namaIbu || '';
+            document.getElementById('inp-pendamping-nama').value = a.namaPendamping || '';
+        }
+
+        function deleteAnakData(id) {
+            if (confirm('Apakah Anda yakin ingin menghapus data ini?')) {
+                listData = listData.filter(item => item.id !== id);
+                localStorage.setItem('dataDisabilitas', JSON.stringify(listData));
+                renderDashboard();
+                renderAnakTable();
+            }
+        }
+
+        function viewAnakDetail(id) {
+            const a = listData.find(item => item.id === id);
+            if (!a) return;
+
+            document.getElementById('det-anak-id-hidden').value = a.id;
+            document.getElementById('det-modal-nama').innerText = a.nama;
+            document.getElementById('det-nik').innerText = a.nik || '-';
+            document.getElementById('det-jk').innerText = a.jenisKelamin || '-';
+            document.getElementById('det-ttl-usia').innerText = `${a.tanggalLahir || '-'} (${a.usia || '-'})`;
+            document.getElementById('det-ragam').innerText = a.ragamDisabilitas || '-';
+            document.getElementById('det-pendidikan').innerText = `${a.tingkatPendidikan || '-'} ${a.namaSekolah ? ' - ' + a.namaSekolah : ''}`;
+            document.getElementById('det-wilayah').innerText = `${a.alamat || ''}, Desa ${a.desa || '-'}, Kec. ${a.kecamatan || '-'}`;
+
+            document.getElementById('modal-detail-anak').classList.remove('hidden');
+            document.getElementById('modal-detail-anak').classList.add('flex');
+        }
+
+        function closeDetailModal() {
+            document.getElementById('modal-detail-anak').classList.add('hidden');
+            document.getElementById('modal-detail-anak').classList.remove('flex');
+        }
+
+        function printCardFromModal() {
+            const id = document.getElementById('det-anak-id-hidden').value;
+            const a = listData.find(item => item.id === parseInt(id));
+            if (!a) return;
+
+            document.getElementById('pr-nama').innerText = a.nama || '-';
+            document.getElementById('pr-nik-kk').innerText = `${a.nik || '-'} / ${a.kk || '-'}`;
+            document.getElementById('pr-jk-usia').innerText = `${a.jenisKelamin || '-'} / ${a.usia || '-'}`;
+            document.getElementById('pr-ragam').innerText = `${a.ragamDisabilitas || '-'} (${a.jenisDisabilitas || '-'})`;
+            document.getElementById('pr-pendidikan').innerText = `${a.tingkatPendidikan || '-'} ${a.namaSekolah ? ' - ' + a.namaSekolah : ''}`;
+            document.getElementById('pr-alamat').innerText = `${a.alamat || ''}, ${a.desa || ''}, ${a.kecamatan || ''}`;
+            document.getElementById('pr-hp').innerText = a.nomorHp || '-';
+
+            document.body.classList.add('printing-card');
+            window.print();
+        }
+
+        // EXPORT TO EXCEL / CSV (USING SHEETJS)
+        function exportToExcel() {
+            if (listData.length === 0) { alert('Belum ada data untuk diexport.'); return; }
+            const worksheet = XLSX.utils.json_to_sheet(listData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Data Anak Disabilitas");
+            XLSX.writeFile(workbook, "DATA_ANAK_DISABILITAS.xlsx");
+        }
+    </script>
+</body>
+</html>
