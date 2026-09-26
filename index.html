@@ -1,0 +1,1500 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pendataan Anak Yayasan Karya Murni Ruteng</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- SheetJS (xlsx) for Excel Export/Import -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background: white !important; color: black !important; }
+        }
+        .print-only { display: none; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <div id="app" class="flex-1 flex flex-col"></div>
+
+    <script>
+        const DEFAULT_CREDENTIALS = { user: 'admin', pass: '123456' };
+        const DEFAULT_SETTINGS = {
+            foundationName: 'Yayasan Karya Murni Ruteng',
+            foundationSubtitle: 'Pusat Data & Administrasi Anak Asuh / Peserta Didik',
+            logoUrl: 'https://placehold.co/120x120/1e293b/ffffff?text=YKM'
+        };
+
+        const EDUCATION_OPTIONS = [
+            'TK',
+            'SD', 
+            'SMP', 
+            'SMA', 
+            'SMK', 
+            'TAMAT SD', 
+            'TAMAT SMP', 
+            'TAMAT SMA', 
+            'KULIAH', 
+            'Lainnya'
+        ];
+
+        function getStoredData(key, fallback) {
+            try {
+                const item = localStorage.getItem(key);
+                return item ? JSON.parse(item) : fallback;
+            } catch (e) {
+                return fallback;
+            }
+        }
+
+        function setStoredData(key, value) {
+            localStorage.setItem(key, JSON.stringify(value));
+        }
+
+        let state = {
+            currentUser: null, 
+            activeTab: 'dashboard', 
+            credentials: getStoredData('ykm_creds', DEFAULT_CREDENTIALS),
+            settings: getStoredData('ykm_settings', DEFAULT_SETTINGS),
+            children: getStoredData('ykm_children', [
+                {
+                    id: '1',
+                    name: 'Yohanes Rian Mandur',
+                    birthDate: '2012-05-14',
+                    gender: 'Laki-laki',
+                    classLevel: 'Kelas 5',
+                    education: 'SD',
+                    domicile: 'Ruteng Kota',
+                    disability: 'Tuna Rungu'
+                },
+                {
+                    id: '2',
+                    name: 'Maria Florentina Ningsih',
+                    birthDate: '2010-08-21',
+                    gender: 'Perempuan',
+                    classLevel: 'Kelas 8',
+                    education: 'SMP',
+                    domicile: 'Wae Belang',
+                    disability: 'Tuna Netra'
+                },
+                {
+                    id: '3',
+                    name: 'Petrus Damianus Gonsalves',
+                    birthDate: '2005-03-10',
+                    gender: 'Laki-laki',
+                    classLevel: 'Alumni',
+                    education: 'TAMAT SMA',
+                    domicile: 'Carep',
+                    disability: 'Disabilitas Daksa'
+                }
+            ]),
+            // Filters for main table
+            filterSearch: '',
+            filterGender: [],
+            filterEducation: [],
+            filterDomicile: [],
+            filterDisability: [],
+            filterAgeMin: '',
+            filterAgeMax: '',
+            // Modal states
+            modalOpen: false,
+            editingChild: null,
+            actionVerifyModal: false,
+            pendingAction: null, 
+            verifyPasswordInput: '',
+            verifyError: '',
+            // Category drill-down Modal state
+            drillDownModal: {
+                open: false,
+                title: '',
+                categoryKey: '', 
+                categoryValue: '',
+                search: '',
+                gender: [],
+                education: [],
+                domicile: [],
+                disability: [],
+                ageMin: '',
+                ageMax: ''
+            },
+            toast: null
+        };
+
+        function saveState() {
+            setStoredData('ykm_children', state.children);
+            setStoredData('ykm_settings', state.settings);
+            setStoredData('ykm_creds', state.credentials);
+        }
+
+        function showToast(message, type = 'success') {
+            state.toast = { message, type };
+            render();
+            setTimeout(() => {
+                if (state.toast && state.toast.message === message) {
+                    state.toast = null;
+                    render();
+                }
+            }, 3500);
+        }
+
+        function calculateAge(birthDateStr) {
+            if (!birthDateStr) return 0;
+            const today = new Date();
+            const birthDate = new Date(birthDateStr);
+            let age = today.getFullYear() - birthDate.getFullYear();
+            const m = today.getMonth() - birthDate.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+                age--;
+            }
+            return age >= 0 ? age : 0;
+        }
+
+        function convertImageFileToJpeg(file, callback) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    const MAX_SIZE = 300;
+                    if (width > height) {
+                        if (width > MAX_SIZE) {
+                            height *= MAX_SIZE / width;
+                            width = MAX_SIZE;
+                        }
+                    } else {
+                        if (height > MAX_SIZE) {
+                            width *= MAX_SIZE / height;
+                            height = MAX_SIZE;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                    callback(jpegDataUrl);
+                };
+                img.onerror = function() {
+                    showToast("Gagal memuat file gambar logo!", "error");
+                };
+                img.src = e.target.result;
+            };
+            reader.onerror = function() {
+                showToast("Gagal membaca file logo!", "error");
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function render() {
+            const app = document.getElementById('app');
+            if (!app) return;
+
+            if (!state.currentUser) {
+                app.innerHTML = renderLogin();
+            } else {
+                app.innerHTML = renderMainLayout();
+            }
+
+            attachEvents();
+        }
+
+        function renderLogin() {
+            return `
+                <div class="flex-1 flex items-center justify-center bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 p-4">
+                    <div class="max-w-md w-full bg-slate-900/85 backdrop-blur-xl rounded-3xl shadow-2xl border border-indigo-500/20 p-8 text-white relative overflow-hidden">
+                        <div class="absolute -right-16 -top-16 w-40 h-40 bg-indigo-600/20 rounded-full blur-2xl pointer-events-none"></div>
+                        <div class="absolute -left-16 -bottom-16 w-40 h-40 bg-purple-600/20 rounded-full blur-2xl pointer-events-none"></div>
+
+                        <div class="text-center mb-8 relative z-10">
+                            <div class="inline-flex items-center justify-center w-20 h-20 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-600/30 mb-4 text-3xl font-bold overflow-hidden border border-indigo-400/30">
+                                <img src="${state.settings.logoUrl}" alt="Logo" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/80x80/1e293b/ffffff?text=YKM'">
+                            </div>
+                            <h1 class="text-2xl font-extrabold tracking-tight">Yayasan Karya Murni</h1>
+                            <p class="text-xs text-indigo-200/80 mt-1">Sistem Pendataan & Manajemen Data Anak Asuh</p>
+                        </div>
+
+                        <form id="login-form" class="space-y-5 relative z-10">
+                            <div>
+                                <label class="block text-xs font-semibold uppercase tracking-wider text-indigo-200 mb-2">Username</label>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-indigo-300">
+                                        <i class="fa-solid fa-user text-sm"></i>
+                                    </span>
+                                    <input type="text" id="login-user" required placeholder="Masukkan username (admin)" 
+                                        class="w-full pl-10 pr-4 py-3 bg-slate-950/60 border border-indigo-500/30 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition">
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-semibold uppercase tracking-wider text-indigo-200 mb-2">Password</label>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-indigo-300">
+                                        <i class="fa-solid fa-lock text-sm"></i>
+                                    </span>
+                                    <input type="password" id="login-pass" required placeholder="Masukkan password (123456)" 
+                                        class="w-full pl-10 pr-4 py-3 bg-slate-950/60 border border-indigo-500/30 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition">
+                                </div>
+                            </div>
+
+                            <button type="submit" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] transition font-semibold rounded-xl shadow-lg shadow-indigo-600/30 text-white flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-right-to-bracket"></i> Masuk ke Dashboard
+                            </button>
+                        </form>
+
+                        <div class="mt-6 p-4 rounded-xl bg-indigo-950/60 border border-indigo-500/20 text-xs text-indigo-200 text-center relative z-10">
+                            <p class="font-semibold mb-1">Akses Default Admin:</p>
+                            <p>Username: <code class="bg-black/40 px-1.5 py-0.5 rounded text-indigo-300 font-mono">admin</code> | Password: <code class="bg-black/40 px-1.5 py-0.5 rounded text-indigo-300 font-mono">123456</code></p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderMainLayout() {
+            return `
+                <header class="bg-slate-900 text-white shadow-md no-print sticky top-0 z-40">
+                    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <img src="${state.settings.logoUrl}" alt="Logo" class="w-10 h-10 object-cover rounded-lg bg-white" onerror="this.src='https://placehold.co/40x40/1e293b/ffffff?text=YKM'">
+                            <div>
+                                <h1 class="font-bold text-sm sm:text-base leading-tight">${state.settings.foundationName}</h1>
+                                <p class="text-xs text-slate-400 hidden sm:block">${state.settings.foundationSubtitle}</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs bg-indigo-900/80 text-indigo-200 px-3 py-1.5 rounded-full font-medium border border-indigo-500/30 hidden md:inline-block">
+                                <i class="fa-solid fa-user-shield mr-1"></i> ${state.currentUser}
+                            </span>
+                            <button id="btn-logout" class="bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 border border-rose-500/30">
+                                <i class="fa-solid fa-right-from-bracket"></i> <span class="hidden sm:inline">Keluar</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-950 border-t border-slate-800">
+                        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1 overflow-x-auto">
+                            <button onclick="switchTab('dashboard')" class="px-4 py-3 text-xs sm:text-sm font-medium border-b-2 transition flex items-center gap-2 whitespace-nowrap ${state.activeTab === 'dashboard' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'}">
+                                <i class="fa-solid fa-chart-pie"></i> Dashboard & Rekapitulasi
+                            </button>
+                            <button onclick="switchTab('data')" class="px-4 py-3 text-xs sm:text-sm font-medium border-b-2 transition flex items-center gap-2 whitespace-nowrap ${state.activeTab === 'data' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'}">
+                                <i class="fa-solid fa-users-rectangle"></i> Pendataan Anak
+                            </button>
+                            <button onclick="switchTab('idcards')" class="px-4 py-3 text-xs sm:text-sm font-medium border-b-2 transition flex items-center gap-2 whitespace-nowrap ${state.activeTab === 'idcards' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'}">
+                                <i class="fa-solid fa-id-card"></i> Cetak Kartu ID
+                            </button>
+                            <button onclick="switchTab('settings')" class="px-4 py-3 text-xs sm:text-sm font-medium border-b-2 transition flex items-center gap-2 whitespace-nowrap ${state.activeTab === 'settings' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'}">
+                                <i class="fa-solid fa-gear"></i> Pengaturan
+                            </button>
+                        </div>
+                    </div>
+                </header>
+
+                ${state.toast ? `
+                    <div class="fixed bottom-5 right-5 z-50 animate-bounce no-print">
+                        <div class="px-4 py-3 rounded-xl shadow-xl text-white font-medium text-sm flex items-center gap-2 ${state.toast.type === 'error' ? 'bg-rose-600' : 'bg-emerald-600'}">
+                            <i class="fa-solid ${state.toast.type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check'}"></i>
+                            ${state.toast.message}
+                        </div>
+                    </div>
+                ` : ''}
+
+                <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+                    ${state.activeTab === 'dashboard' ? renderDashboard() : ''}
+                    ${state.activeTab === 'data' ? renderDataManagement() : ''}
+                    ${state.activeTab === 'idcards' ? renderIdCards() : ''}
+                    ${state.activeTab === 'settings' ? renderSettings() : ''}
+                </main>
+
+                ${state.modalOpen ? renderChildModal() : ''}
+                ${state.actionVerifyModal ? renderVerifyModal() : ''}
+                ${state.drillDownModal.open ? renderDrillDownModal() : ''}
+            `;
+        }
+
+        function renderDashboard() {
+            const total = state.children.length;
+            
+            const genderCounts = {};
+            const educationCounts = {};
+            const domicileCounts = {};
+            const disabilityCounts = {};
+            const ageGroupCounts = { '< 7 Tahun': 0, '7 - 12 Tahun': 0, '13 - 15 Tahun': 0, '16 - 18 Tahun': 0, '> 18 Tahun': 0 };
+
+            state.children.forEach(c => {
+                const g = c.gender || 'Lainnya';
+                genderCounts[g] = (genderCounts[g] || 0) + 1;
+
+                const ed = c.education || 'Lainnya';
+                educationCounts[ed] = (educationCounts[ed] || 0) + 1;
+
+                const dom = c.domicile || 'Tidak Diketahui';
+                domicileCounts[dom] = (domicileCounts[dom] || 0) + 1;
+
+                const dis = c.disability ? c.disability.trim() : 'Tidak Ada / Belum Diisi';
+                disabilityCounts[dis] = (disabilityCounts[dis] || 0) + 1;
+
+                const age = calculateAge(c.birthDate);
+                if (age < 7) ageGroupCounts['< 7 Tahun']++;
+                else if (age <= 12) ageGroupCounts['7 - 12 Tahun']++;
+                else if (age <= 15) ageGroupCounts['13 - 15 Tahun']++;
+                else if (age <= 18) ageGroupCounts['16 - 18 Tahun']++;
+                else ageGroupCounts['> 18 Tahun']++;
+            });
+
+            return `
+                <div class="space-y-8">
+                    <div>
+                        <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Dashboard & Kartu Rekapitulasi</h2>
+                        <p class="text-sm text-slate-500">Klik salah satu kategori rekap di bawah untuk membuka jendela detail dan melakukan filter lanjutan.</p>
+                    </div>
+
+                    <div class="bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950 rounded-2xl p-6 text-white shadow-xl flex items-center justify-between">
+                        <div>
+                            <p class="text-xs uppercase tracking-wider text-indigo-300 font-semibold">Total Seluruh Anak Asuh</p>
+                            <h3 class="text-4xl font-extrabold mt-1">${total} <span class="text-lg font-normal text-indigo-200">Anak</span></h3>
+                            <p class="text-xs text-indigo-200/80 mt-1">${state.settings.foundationName}</p>
+                        </div>
+                        <div class="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center text-3xl text-indigo-300 border border-white/10">
+                            <i class="fa-solid fa-users"></i>
+                        </div>
+                    </div>
+
+                    <!-- Rekap Kategori: Jenis Kelamin -->
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                            <i class="fa-solid fa-venus-mars text-indigo-600"></i> Rekapitulasi Berdasarkan Jenis Kelamin
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            ${Object.entries(genderCounts).map(([key, count]) => `
+                                <div onclick="openDrillDown('Jenis Kelamin: ' + '${key}', 'gender', '${key}')" 
+                                    class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-500 hover:shadow-md transition cursor-pointer flex items-center justify-between group">
+                                    <div>
+                                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Jenis Kelamin</p>
+                                        <h4 class="text-xl font-bold text-slate-900 mt-1 group-hover:text-indigo-600 transition">${key}</h4>
+                                        <p class="text-xs text-indigo-600 font-medium mt-1">${count} Anak (${Math.round((count/total)*100 || 0)}%)</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-xl group-hover:bg-indigo-600 group-hover:text-white transition">
+                                        <i class="fa-solid fa-arrow-right"></i>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Rekap Kategori: Jenis Disabilitas -->
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                            <i class="fa-solid fa-wheelchair text-indigo-600"></i> Rekapitulasi Berdasarkan Jenis Disabilitas
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            ${Object.entries(disabilityCounts).map(([key, count]) => `
+                                <div onclick="openDrillDown('Disabilitas: ' + '${key}', 'disability', '${key}')" 
+                                    class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-500 hover:shadow-md transition cursor-pointer flex items-center justify-between group">
+                                    <div>
+                                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Jenis Disabilitas</p>
+                                        <h4 class="text-xl font-bold text-slate-900 mt-1 group-hover:text-indigo-600 transition">${key}</h4>
+                                        <p class="text-xs text-indigo-600 font-medium mt-1">${count} Anak (${Math.round((count/total)*100 || 0)}%)</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-xl group-hover:bg-indigo-600 group-hover:text-white transition">
+                                        <i class="fa-solid fa-arrow-right"></i>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Rekap Kategori: Tingkat Pendidikan -->
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                            <i class="fa-solid fa-school text-indigo-600"></i> Rekapitulasi Berdasarkan Tingkat Pendidikan
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            ${EDUCATION_OPTIONS.map(edOption => {
+                                const count = educationCounts[edOption] || 0;
+                                return `
+                                <div onclick="openDrillDown('Pendidikan: ' + '${edOption}', 'education', '${edOption}')" 
+                                    class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-500 hover:shadow-md transition cursor-pointer flex items-center justify-between group">
+                                    <div>
+                                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Jenjang</p>
+                                        <h4 class="text-lg font-bold text-slate-900 mt-1 group-hover:text-indigo-600 transition truncate">${edOption}</h4>
+                                        <p class="text-xs text-indigo-600 font-medium mt-1">${count} Anak (${Math.round((count/total)*100 || 0)}%)</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-xl group-hover:bg-indigo-600 group-hover:text-white transition shrink-0">
+                                        <i class="fa-solid fa-arrow-right"></i>
+                                    </div>
+                                </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Rekap Kategori: Domisili -->
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                            <i class="fa-solid fa-map-location-dot text-indigo-600"></i> Rekapitulasi Berdasarkan Domisili
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            ${Object.keys(domicileCounts).length === 0 ? '<p class="text-xs text-slate-400">Belum ada data domisili</p>' : Object.entries(domicileCounts).map(([key, count]) => `
+                                <div onclick="openDrillDown('Domisili: ' + '${key}', 'domicile', '${key}')" 
+                                    class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-500 hover:shadow-md transition cursor-pointer flex items-center justify-between group">
+                                    <div>
+                                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Wilayah</p>
+                                        <h4 class="text-xl font-bold text-slate-900 mt-1 group-hover:text-indigo-600 transition">${key}</h4>
+                                        <p class="text-xs text-indigo-600 font-medium mt-1">${count} Anak (${Math.round((count/total)*100 || 0)}%)</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-xl group-hover:bg-indigo-600 group-hover:text-white transition">
+                                        <i class="fa-solid fa-arrow-right"></i>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Rekap Kategori: Rentang Usia -->
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                            <i class="fa-solid fa-cake-candles text-indigo-600"></i> Rekapitulasi Berdasarkan Rentang Usia
+                        </h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            ${Object.entries(ageGroupCounts).map(([key, count]) => `
+                                <div onclick="openDrillDownByAgeRange('${key}')" 
+                                    class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-500 hover:shadow-md transition cursor-pointer flex items-center justify-between group">
+                                    <div>
+                                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Rentang Usia</p>
+                                        <h4 class="text-xl font-bold text-slate-900 mt-1 group-hover:text-indigo-600 transition">${key}</h4>
+                                        <p class="text-xs text-indigo-600 font-medium mt-1">${count} Anak (${Math.round((count/total)*100 || 0)}%)</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-xl group-hover:bg-indigo-600 group-hover:text-white transition">
+                                        <i class="fa-solid fa-arrow-right"></i>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function openDrillDown(title, categoryKey, categoryValue) {
+            state.drillDownModal = {
+                open: true,
+                title: title,
+                categoryKey: categoryKey,
+                categoryValue: categoryValue,
+                search: '',
+                gender: categoryKey === 'gender' ? [categoryValue] : [],
+                education: categoryKey === 'education' ? [categoryValue] : [],
+                domicile: categoryKey === 'domicile' ? [categoryValue] : [],
+                disability: categoryKey === 'disability' ? [categoryValue] : [],
+                ageMin: '',
+                ageMax: ''
+            };
+            render();
+        }
+
+        function openDrillDownByAgeRange(rangeLabel) {
+            let min = '', max = '';
+            if (rangeLabel.includes('< 7')) { max = '6'; }
+            else if (rangeLabel.includes('7 - 12')) { min = '7'; max = '12'; }
+            else if (rangeLabel.includes('13 - 15')) { min = '13'; max = '15'; }
+            else if (rangeLabel.includes('16 - 18')) { min = '16'; max = '18'; }
+            else if (rangeLabel.includes('> 18')) { min = '19'; }
+
+            state.drillDownModal = {
+                open: true,
+                title: 'Rentang Usia: ' + rangeLabel,
+                categoryKey: 'ageRange',
+                categoryValue: rangeLabel,
+                search: '',
+                gender: [],
+                education: [],
+                domicile: [],
+                disability: [],
+                ageMin: min,
+                ageMax: max
+            };
+            render();
+        }
+
+        function closeDrillDown() {
+            state.drillDownModal.open = false;
+            render();
+        }
+
+        function getFilteredDrillDownChildren() {
+            const m = state.drillDownModal;
+            return state.children.filter(c => {
+                const nameMatch = c.name.toLowerCase().includes(m.search.toLowerCase());
+                const genderMatch = m.gender.length === 0 || m.gender.includes(c.gender);
+                const eduMatch = m.education.length === 0 || m.education.includes(c.education);
+                const domMatch = m.domicile.length === 0 || m.domicile.includes(c.domicile);
+                const cDis = c.disability ? c.disability.trim() : 'Tidak Ada / Belum Diisi';
+                const disMatch = m.disability.length === 0 || m.disability.includes(cDis);
+
+                const age = calculateAge(c.birthDate);
+                const minMatch = m.ageMin === '' || age >= parseInt(m.ageMin);
+                const maxMatch = m.ageMax === '' || age <= parseInt(m.ageMax);
+
+                return nameMatch && genderMatch && eduMatch && domMatch && disMatch && minMatch && maxMatch;
+            });
+        }
+
+        function renderDrillDownModal() {
+            const m = state.drillDownModal;
+            const filteredChildren = getFilteredDrillDownChildren();
+
+            const allGenders = ['Laki-laki', 'Perempuan'];
+            const allEducations = EDUCATION_OPTIONS;
+            const allDomiciles = [...new Set(state.children.map(c => c.domicile).filter(Boolean))];
+            const allDisabilities = [...new Set(state.children.map(c => c.disability ? c.disability.trim() : 'Tidak Ada / Belum Diisi'))];
+
+            return `
+                <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+                    <div class="bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                            <div>
+                                <h3 class="font-bold text-lg flex items-center gap-2">
+                                    <i class="fa-solid fa-filter text-indigo-400"></i> Detail Data: ${m.title}
+                                </h3>
+                                <p class="text-xs text-slate-400">Menampilkan ${filteredChildren.length} dari ${state.children.length} total anak</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="printDrillDownData()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-print"></i> Cetak Rekap
+                                </button>
+                                <button onclick="exportDrillDownExcel()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-file-excel"></i> Export Excel
+                                </button>
+                                <button onclick="closeDrillDown()" class="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Filter Header in Drill Down -->
+                        <div class="p-4 bg-slate-100 border-b border-slate-200 space-y-3">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Cari Nama</label>
+                                    <input type="text" id="drill-search-input" value="${m.search}" placeholder="Ketik nama anak..." 
+                                        class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-slate-600 mb-1">Min Usia</label>
+                                        <input type="number" id="drill-agemin-input" value="${m.ageMin}" placeholder="Min" 
+                                            class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-slate-600 mb-1">Maks Usia</label>
+                                        <input type="number" id="drill-agemax-input" value="${m.ageMax}" placeholder="Maks" 
+                                            class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    </div>
+                                </div>
+                                <div class="flex items-end">
+                                    <button onclick="resetDrillFilters()" class="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-semibold transition">
+                                        Reset Filter
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Multi-select checkboxes for categories -->
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2 border-t border-slate-200 text-xs">
+                                <div>
+                                    <span class="font-semibold text-slate-700 block mb-1">Jenis Kelamin:</span>
+                                    <div class="flex flex-wrap gap-2">
+                                        ${allGenders.map(g => `
+                                            <label class="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-200 cursor-pointer">
+                                                <input type="checkbox" value="${g}" ${m.gender.includes(g) ? 'checked' : ''} onchange="toggleDrillFilter('gender', '${g}')" class="rounded text-indigo-600 focus:ring-indigo-500">
+                                                <span>${g}</span>
+                                            </label>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                <div>
+                                    <span class="font-semibold text-slate-700 block mb-1">Jenis Disabilitas:</span>
+                                    <div class="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
+                                        ${allDisabilities.map(dis => `
+                                            <label class="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200 cursor-pointer">
+                                                <input type="checkbox" value="${dis}" ${m.disability.includes(dis) ? 'checked' : ''} onchange="toggleDrillFilter('disability', '${dis}')" class="rounded text-indigo-600 focus:ring-indigo-500">
+                                                <span>${dis}</span>
+                                            </label>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                <div>
+                                    <span class="font-semibold text-slate-700 block mb-1">Pendidikan:</span>
+                                    <div class="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
+                                        ${allEducations.map(ed => `
+                                            <label class="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200 cursor-pointer">
+                                                <input type="checkbox" value="${ed}" ${m.education.includes(ed) ? 'checked' : ''} onchange="toggleDrillFilter('education', '${ed}')" class="rounded text-indigo-600 focus:ring-indigo-500">
+                                                <span>${ed}</span>
+                                            </label>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                <div>
+                                    <span class="font-semibold text-slate-700 block mb-1">Domisili:</span>
+                                    <div class="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
+                                        ${allDomiciles.length === 0 ? '<span class="text-slate-400">Tidak ada data</span>' : allDomiciles.map(dom => `
+                                            <label class="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200 cursor-pointer">
+                                                <input type="checkbox" value="${dom}" ${m.domicile.includes(dom) ? 'checked' : ''} onchange="toggleDrillFilter('domicile', '${dom}')" class="rounded text-indigo-600 focus:ring-indigo-500">
+                                                <span>${dom}</span>
+                                            </label>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Table body -->
+                        <div class="flex-1 overflow-x-auto p-6">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="border-b border-slate-200 text-xs font-bold text-slate-500 uppercase">
+                                        <th class="py-3 px-4">No</th>
+                                        <th class="py-3 px-4">Nama Anak</th>
+                                        <th class="py-3 px-4">Jenis Kelamin</th>
+                                        <th class="py-3 px-4">Tgl Lahir / Usia</th>
+                                        <th class="py-3 px-4">Disabilitas</th>
+                                        <th class="py-3 px-4">Kelas</th>
+                                        <th class="py-3 px-4">Pendidikan</th>
+                                        <th class="py-3 px-4">Domisili</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 text-sm">
+                                    ${filteredChildren.length === 0 ? `
+                                        <tr>
+                                            <td colspan="8" class="py-8 text-center text-slate-400">Tidak ada anak yang sesuai dengan kriteria filter.</td>
+                                        </tr>
+                                    ` : filteredChildren.map((c, idx) => `
+                                        <tr class="hover:bg-slate-50 transition">
+                                            <td class="py-3 px-4 text-slate-500">${idx + 1}</td>
+                                            <td class="py-3 px-4 font-semibold text-slate-900">${c.name}</td>
+                                            <td class="py-3 px-4 text-slate-600">${c.gender}</td>
+                                            <td class="py-3 px-4 text-slate-600">${c.birthDate} (${calculateAge(c.birthDate)} thn)</td>
+                                            <td class="py-3 px-4"><span class="px-2.5 py-1 bg-purple-50 text-purple-700 rounded-lg text-xs font-semibold">${c.disability || '-'}</span></td>
+                                            <td class="py-3 px-4 text-slate-600">${c.classLevel}</td>
+                                            <td class="py-3 px-4"><span class="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-semibold">${c.education}</span></td>
+                                            <td class="py-3 px-4 text-slate-600">${c.domicile}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDataManagement() {
+            const allGenders = ['Laki-laki', 'Perempuan'];
+            const allEducations = EDUCATION_OPTIONS;
+            const allDomiciles = [...new Set(state.children.map(c => c.domicile).filter(Boolean))];
+            const allDisabilities = [...new Set(state.children.map(c => c.disability ? c.disability.trim() : 'Tidak Ada / Belum Diisi'))];
+
+            const filtered = state.children.filter(c => {
+                const nameMatch = c.name.toLowerCase().includes(state.filterSearch.toLowerCase());
+                const genderMatch = state.filterGender.length === 0 || state.filterGender.includes(c.gender);
+                const eduMatch = state.filterEducation.length === 0 || state.filterEducation.includes(c.education);
+                const domMatch = state.filterDomicile.length === 0 || state.filterDomicile.includes(c.domicile);
+                const cDis = c.disability ? c.disability.trim() : 'Tidak Ada / Belum Diisi';
+                const disMatch = state.filterDisability.length === 0 || state.filterDisability.includes(cDis);
+
+                const age = calculateAge(c.birthDate);
+                const minMatch = state.filterAgeMin === '' || age >= parseInt(state.filterAgeMin);
+                const maxMatch = state.filterAgeMax === '' || age <= parseInt(state.filterAgeMax);
+
+                return nameMatch && genderMatch && eduMatch && domMatch && disMatch && minMatch && maxMatch;
+            });
+
+            return `
+                <div class="space-y-6">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                            <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Manajemen Data Anak</h2>
+                            <p class="text-sm text-slate-500">Kelola pendataan anak asuh Yayasan Karya Murni Ruteng</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button onclick="openAddModal()" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition shadow-md shadow-indigo-600/20 flex items-center gap-2">
+                                <i class="fa-solid fa-user-plus"></i> Tambah Anak
+                            </button>
+                            <label class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-2">
+                                <i class="fa-solid fa-file-excel"></i> Import Excel
+                                <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" class="hidden" onchange="importExcelFile(event)">
+                            </label>
+                            <button onclick="exportExcelFile()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold transition flex items-center gap-2">
+                                <i class="fa-solid fa-download"></i> Export Excel
+                            </button>
+                            <button onclick="verifyAction('deleteAll')" class="px-4 py-2.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white rounded-xl text-xs font-semibold transition border border-rose-500/30 flex items-center gap-2">
+                                <i class="fa-solid fa-trash-can"></i> Hapus Semua
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Multi-Criteria Filter Section -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <i class="fa-solid fa-filter text-indigo-600"></i> Menu Sub Filter (Multi-Kriteria)
+                            </h3>
+                            <button onclick="resetMainFilters()" class="text-xs font-semibold text-indigo-600 hover:underline">Reset Semua Filter</button>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Cari Nama Anak</label>
+                                <input type="text" id="main-search-input" value="${state.filterSearch}" placeholder="Ketik nama..." 
+                                    class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Min Usia</label>
+                                    <input type="number" id="main-agemin-input" value="${state.filterAgeMin}" placeholder="Min" 
+                                        class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Maks Usia</label>
+                                    <input type="number" id="main-agemax-input" value="${state.filterAgeMax}" placeholder="Maks" 
+                                        class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pt-3 border-t border-slate-100 text-xs">
+                            <!-- Jenis Kelamin Filter -->
+                            <div>
+                                <span class="font-semibold text-slate-700 block mb-1.5">Pilih Jenis Kelamin:</span>
+                                <div class="flex flex-wrap gap-2">
+                                    ${allGenders.map(g => `
+                                        <label class="inline-flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 cursor-pointer">
+                                            <input type="checkbox" value="${g}" ${state.filterGender.includes(g) ? 'checked' : ''} onchange="toggleMainFilter('gender', '${g}')" class="rounded text-indigo-600 focus:ring-indigo-500">
+                                            <span>${g}</span>
+                                        </label>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <!-- Jenis Disabilitas Filter -->
+                            <div>
+                                <span class="font-semibold text-slate-700 block mb-1.5">Pilih Jenis Disabilitas:</span>
+                                <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                                    ${allDisabilities.map(dis => `
+                                        <label class="inline-flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 cursor-pointer">
+                                            <input type="checkbox" value="${dis}" ${state.filterDisability.includes(dis) ? 'checked' : ''} onchange="toggleMainFilter('disability', '${dis}')" class="rounded text-indigo-600 focus:ring-indigo-500">
+                                            <span>${dis}</span>
+                                        </label>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <!-- Pendidikan Filter -->
+                            <div>
+                                <span class="font-semibold text-slate-700 block mb-1.5">Pilih Tingkat Pendidikan:</span>
+                                <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                                    ${allEducations.map(ed => `
+                                        <label class="inline-flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 cursor-pointer">
+                                            <input type="checkbox" value="${ed}" ${state.filterEducation.includes(ed) ? 'checked' : ''} onchange="toggleMainFilter('education', '${ed}')" class="rounded text-indigo-600 focus:ring-indigo-500">
+                                            <span>${ed}</span>
+                                        </label>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <!-- Domisili Filter -->
+                            <div>
+                                <span class="font-semibold text-slate-700 block mb-1.5">Pilih Domisili:</span>
+                                <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                                    ${allDomiciles.length === 0 ? '<span class="text-slate-400">Belum ada domisili</span>' : allDomiciles.map(dom => `
+                                        <label class="inline-flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 cursor-pointer">
+                                            <input type="checkbox" value="${dom}" ${state.filterDomicile.includes(dom) ? 'checked' : ''} onchange="toggleMainFilter('domicile', '${dom}')" class="rounded text-indigo-600 focus:ring-indigo-500">
+                                            <span>${dom}</span>
+                                        </label>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Table Data -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                            <h3 class="font-bold text-slate-800 text-sm">Daftar Anak Asuh (${filtered.length} ditampilkan)</h3>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase">
+                                        <th class="py-3.5 px-6">No</th>
+                                        <th class="py-3.5 px-6">Nama Lengkap</th>
+                                        <th class="py-3.5 px-6">Jenis Kelamin</th>
+                                        <th class="py-3.5 px-6">Tanggal Lahir</th>
+                                        <th class="py-3.5 px-6">Usia</th>
+                                        <th class="py-3.5 px-6">Disabilitas</th>
+                                        <th class="py-3.5 px-6">Kelas</th>
+                                        <th class="py-3.5 px-6">Pendidikan</th>
+                                        <th class="py-3.5 px-6">Domisili</th>
+                                        <th class="py-3.5 px-6 text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 text-sm">
+                                    ${filtered.length === 0 ? `
+                                        <tr>
+                                            <td colspan="10" class="py-12 text-center text-slate-400">Belum ada data anak atau tidak ditemukan dengan filter yang dipilih.</td>
+                                        </tr>
+                                    ` : filtered.map((c, idx) => `
+                                        <tr class="hover:bg-slate-50/80 transition">
+                                            <td class="py-4 px-6 text-slate-500">${idx + 1}</td>
+                                            <td class="py-4 px-6 font-semibold text-slate-900">${c.name}</td>
+                                            <td class="py-4 px-6 text-slate-600">${c.gender}</td>
+                                            <td class="py-4 px-6 text-slate-600">${c.birthDate}</td>
+                                            <td class="py-4 px-6 font-medium text-indigo-600">${calculateAge(c.birthDate)} Tahun</td>
+                                            <td class="py-4 px-6"><span class="px-2.5 py-1 bg-purple-50 text-purple-700 rounded-lg text-xs font-semibold">${c.disability || '-'}</span></td>
+                                            <td class="py-4 px-6 text-slate-600">${c.classLevel}</td>
+                                            <td class="py-4 px-6"><span class="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-semibold">${c.education}</span></td>
+                                            <td class="py-4 px-6 text-slate-600">${c.domicile}</td>
+                                            <td class="py-4 px-6 text-center">
+                                                <div class="flex items-center justify-center gap-2">
+                                                    <button onclick="verifyAction('edit', '${c.id}')" class="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition" title="Edit Data">
+                                                        <i class="fa-solid fa-pen-to-square text-xs"></i>
+                                                    </button>
+                                                    <button onclick="verifyAction('delete', '${c.id}')" class="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition" title="Hapus Data">
+                                                        <i class="fa-solid fa-trash text-xs"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderIdCards() {
+            return `
+                <div class="space-y-6">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
+                        <div>
+                            <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Cetak Kartu Tanda Anak Asuh</h2>
+                            <p class="text-sm text-slate-500">Cetak kartu ID resmi dengan logo dan nama Yayasan Karya Murni Ruteng</p>
+                        </div>
+                        <button onclick="window.print()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition shadow-md shadow-indigo-600/20 flex items-center gap-2">
+                            <i class="fa-solid fa-print"></i> Cetak Semua Kartu
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        ${state.children.map(c => `
+                            <div class="bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white rounded-3xl p-6 shadow-xl border border-indigo-500/30 relative overflow-hidden flex flex-col justify-between h-64">
+                                <div class="absolute -right-10 -bottom-10 w-32 h-32 bg-indigo-600/20 rounded-full blur-xl pointer-events-none"></div>
+                                
+                                <div class="flex items-center gap-3 border-b border-indigo-500/30 pb-3">
+                                    <img src="${state.settings.logoUrl}" alt="Logo" class="w-10 h-10 object-cover rounded-xl bg-white p-0.5" onerror="this.src='https://placehold.co/40x40/1e293b/ffffff?text=YKM'">
+                                    <div>
+                                        <h4 class="font-bold text-xs leading-tight">${state.settings.foundationName}</h4>
+                                        <p class="text-[10px] text-indigo-300">KARTU TANDA ANAK ASUH</p>
+                                    </div>
+                                </div>
+
+                                <div class="my-2">
+                                    <h3 class="font-extrabold text-base tracking-wide">${c.name}</h3>
+                                    <div class="grid grid-cols-2 gap-x-2 gap-y-1 mt-2 text-xs text-indigo-200">
+                                        <p><span class="text-indigo-400">Gender:</span> ${c.gender}</p>
+                                        <p><span class="text-indigo-400">Usia:</span> ${calculateAge(c.birthDate)} Thn</p>
+                                        <p class="col-span-2"><span class="text-indigo-400">Disabilitas:</span> ${c.disability || '-'}</p>
+                                        <p><span class="text-indigo-400">Pendidikan:</span> ${c.education}</p>
+                                        <p><span class="text-indigo-400">Domisili:</span> ${c.domicile}</p>
+                                    </div>
+                                </div>
+
+                                <div class="pt-3 border-t border-indigo-500/30 flex items-center justify-between text-[10px] text-indigo-300">
+                                    <span>ID: YKM-${c.id.padStart(4, '0')}</span>
+                                    <span class="font-semibold text-white">Ruteng, Flores</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSettings() {
+            return `
+                <div class="max-w-2xl mx-auto space-y-6">
+                    <div>
+                        <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Pengaturan Aplikasi</h2>
+                        <p class="text-sm text-slate-500">Atur kredensial admin, logo yayasan (format JPEG otomatis), dan identitas yayasan</p>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 space-y-6">
+                        <form id="settings-form" class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Nama Yayasan</label>
+                                <input type="text" id="set-name" value="${state.settings.foundationName}" required 
+                                    class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Subjudul / Deskripsi Singkat</label>
+                                <input type="text" id="set-subtitle" value="${state.settings.foundationSubtitle}" required 
+                                    class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Logo Aplikasi (Format JPEG Otomatis)</label>
+                                <div class="flex items-center gap-4 mt-2">
+                                    <img src="${state.settings.logoUrl}" alt="Logo Preview" class="w-16 h-16 object-cover rounded-2xl border border-slate-300 bg-white" onerror="this.src='https://placehold.co/80x80/1e293b/ffffff?text=YKM'">
+                                    <input type="file" id="set-logo-file" accept="image/*" class="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer">
+                                </div>
+                            </div>
+
+                            <hr class="border-slate-200 my-4">
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Username Admin Baru</label>
+                                    <input type="text" id="set-user" value="${state.credentials.user}" required 
+                                        class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Password Admin Baru</label>
+                                    <input type="password" id="set-pass" placeholder="Biarkan kosong jika tetap" 
+                                        class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </div>
+                            </div>
+
+                            <button type="submit" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/35 transition flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-floppy-disk"></i> Simpan Pengaturan
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderChildModal() {
+            const c = state.editingChild || { name: '', birthDate: '', gender: 'Laki-laki', classLevel: '', education: 'SD', domicile: '', disability: '' };
+            const isEdit = !!state.editingChild;
+
+            return `
+                <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+                    <div class="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="text-lg font-bold text-slate-900">${isEdit ? 'Edit Data Anak Asuh' : 'Tambah Data Anak Asuh'}</h3>
+                            <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+
+                        <form id="child-form" class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Nama Lengkap</label>
+                                <input type="text" id="modal-name" value="${c.name}" required placeholder="Masukkan nama lengkap anak..." 
+                                    class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Tanggal Lahir</label>
+                                    <input type="date" id="modal-birth" value="${c.birthDate}" required 
+                                        class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Jenis Kelamin</label>
+                                    <select id="modal-gender" required class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                        <option value="Laki-laki" ${c.gender === 'Laki-laki' ? 'selected' : ''}>Laki-laki</option>
+                                        <option value="Perempuan" ${c.gender === 'Perempuan' ? 'selected' : ''}>Perempuan</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Jenis Disabilitas (Manual)</label>
+                                <input type="text" id="modal-disability" value="${c.disability || ''}" placeholder="Contoh: Tuna Rungu, Tuna Netra, dll" 
+                                    class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Kelas (Manual)</label>
+                                    <input type="text" id="modal-class" value="${c.classLevel}" required placeholder="Contoh: Kelas 5, 8, dll" 
+                                        class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Tingkat Pendidikan</label>
+                                    <select id="modal-education" required class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                        ${EDUCATION_OPTIONS.map(ed => `
+                                            <option value="${ed}" ${c.education === ed ? 'selected' : ''}>${ed}</option>
+                                        `).join('')}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">Domisili (Manual)</label>
+                                <input type="text" id="modal-domicile" value="${c.domicile}" required placeholder="Contoh: Ruteng Kota, Carep, dll" 
+                                    class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+
+                            <button type="submit" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/35 transition flex items-center justify-center gap-2 mt-4">
+                                <i class="fa-solid fa-check"></i> Simpan Data Anak
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderVerifyModal() {
+            let actionTitle = 'Verifikasi Admin';
+            if (state.pendingAction && state.pendingAction.type === 'edit') actionTitle = 'Verifikasi Password untuk Edit';
+            if (state.pendingAction && state.pendingAction.type === 'delete') actionTitle = 'Verifikasi Password untuk Hapus';
+            if (state.pendingAction && state.pendingAction.type === 'deleteAll') actionTitle = 'Verifikasi Password Hapus Seluruh Data';
+
+            return `
+                <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div class="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-6 animate-in fade-in zoom-in-95 duration-200">
+                        <div class="text-center mb-6">
+                            <div class="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3">
+                                <i class="fa-solid fa-shield-halved"></i>
+                            </div>
+                            <h3 class="text-lg font-bold text-slate-900">${actionTitle}</h3>
+                            <p class="text-xs text-slate-500 mt-1">Masukkan password aplikasi untuk melanjutkan.</p>
+                        </div>
+
+                        <form id="verify-form" class="space-y-4">
+                            <div>
+                                <input type="password" id="verify-pass-input" required placeholder="Password aplikasi..." 
+                                    class="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+
+                            ${state.verifyError ? `<p class="text-xs text-rose-600 text-center font-semibold">${state.verifyError}</p>` : ''}
+
+                            <div class="grid grid-cols-2 gap-3 pt-2">
+                                <button type="button" onclick="closeVerifyModal()" class="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition">
+                                    Batal
+                                </button>
+                                <button type="submit" class="py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl text-xs transition shadow-md shadow-indigo-600/30">
+                                    Konfirmasi
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        function switchTab(tab) {
+            state.activeTab = tab;
+            render();
+        }
+
+        function toggleMainFilter(type, value) {
+            if (type === 'gender') {
+                if (state.filterGender.includes(value)) state.filterGender = state.filterGender.filter(v => v !== value);
+                else state.filterGender.push(value);
+            } else if (type === 'disability') {
+                if (state.filterDisability.includes(value)) state.filterDisability = state.filterDisability.filter(v => v !== value);
+                else state.filterDisability.push(value);
+            } else if (type === 'education') {
+                if (state.filterEducation.includes(value)) state.filterEducation = state.filterEducation.filter(v => v !== value);
+                else state.filterEducation.push(value);
+            } else if (type === 'domicile') {
+                if (state.filterDomicile.includes(value)) state.filterDomicile = state.filterDomicile.filter(v => v !== value);
+                else state.filterDomicile.push(value);
+            }
+            render();
+        }
+
+        function resetMainFilters() {
+            state.filterSearch = '';
+            state.filterGender = [];
+            state.filterDisability = [];
+            state.filterEducation = [];
+            state.filterDomicile = [];
+            state.filterAgeMin = '';
+            state.filterAgeMax = '';
+            render();
+        }
+
+        function toggleDrillFilter(type, value) {
+            const m = state.drillDownModal;
+            if (type === 'gender') {
+                if (m.gender.includes(value)) m.gender = m.gender.filter(v => v !== value);
+                else m.gender.push(value);
+            } else if (type === 'disability') {
+                if (m.disability.includes(value)) m.disability = m.disability.filter(v => v !== value);
+                else m.disability.push(value);
+            } else if (type === 'education') {
+                if (m.education.includes(value)) m.education = m.education.filter(v => v !== value);
+                else m.education.push(value);
+            } else if (type === 'domicile') {
+                if (m.domicile.includes(value)) m.domicile = m.domicile.filter(v => v !== value);
+                else m.domicile.push(value);
+            }
+            render();
+        }
+
+        function resetDrillFilters() {
+            state.drillDownModal.search = '';
+            state.drillDownModal.gender = [];
+            state.drillDownModal.disability = [];
+            state.drillDownModal.education = [];
+            state.drillDownModal.domicile = [];
+            state.drillDownModal.ageMin = '';
+            state.drillDownModal.ageMax = '';
+            render();
+        }
+
+        function openAddModal() {
+            state.editingChild = null;
+            state.modalOpen = true;
+            render();
+        }
+
+        function closeModal() {
+            state.modalOpen = false;
+            state.editingChild = null;
+            render();
+        }
+
+        function verifyAction(type, id = null) {
+            state.actionVerifyModal = true;
+            state.pendingAction = { type, id };
+            state.verifyError = '';
+            render();
+        }
+
+        function closeVerifyModal() {
+            state.actionVerifyModal = false;
+            state.pendingAction = null;
+            state.verifyError = '';
+            render();
+        }
+
+        function printDrillDownData() {
+            const filtered = getFilteredDrillDownChildren();
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Laporan Rekapitulasi - ${state.settings.foundationName}</title>
+                    <style>
+                        body { font-family: sans-serif; padding: 20px; color: #111; }
+                        .header-container { display: flex; align-items: center; gap: 15px; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+                        .header-container img { width: 50px; height: 50px; object-fit: cover; border-radius: 8px; }
+                        h2, h3 { margin: 2px 0; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                        th, td { border: 1px solid #444; padding: 8px 12px; font-size: 12px; text-align: left; }
+                        th { background: #f2f2f2; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header-container">
+                        <img src="${state.settings.logoUrl}" alt="Logo" onerror="this.style.display='none'">
+                        <div>
+                            <h2>${state.settings.foundationName}</h2>
+                            <h3>Laporan Kategori: ${state.drillDownModal.title}</h3>
+                        </div>
+                    </div>
+                    <p style="font-size: 11px; color: #555; margin-bottom: 15px;">Dicetak pada: ${new Date().toLocaleDateString('id-ID', {dateStyle: 'full'})}</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Nama Anak</th>
+                                <th>Jenis Kelamin</th>
+                                <th>Tgl Lahir / Usia</th>
+                                <th>Disabilitas</th>
+                                <th>Kelas</th>
+                                <th>Pendidikan</th>
+                                <th>Domisili</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filtered.map((c, idx) => `
+                                <tr>
+                                    <td>${idx + 1}</td>
+                                    <td><b>${c.name}</b></td>
+                                    <td>${c.gender}</td>
+                                    <td>${c.birthDate} (${calculateAge(c.birthDate)} thn)</td>
+                                    <td>${c.disability || '-'}</td>
+                                    <td>${c.classLevel}</td>
+                                    <td>${c.education}</td>
+                                    <td>${c.domicile}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <script>
+                        window.onload = function() { window.print(); window.close(); }
+                    <\/script>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+        }
+
+        function exportDrillDownExcel() {
+            const filtered = getFilteredDrillDownChildren();
+            const dataToExport = filtered.map((c, idx) => ({
+                No: idx + 1,
+                'Nama Lengkap': c.name,
+                'Jenis Kelamin': c.gender,
+                'Tanggal Lahir': c.birthDate,
+                'Usia (Tahun)': calculateAge(c.birthDate),
+                'Jenis Disabilitas': c.disability || '-',
+                Kelas: c.classLevel,
+                'Tingkat Pendidikan': c.education,
+                Domisili: c.domicile
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Rekap Filter");
+            XLSX.writeFile(workbook, `Rekap_${state.drillDownModal.title.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`);
+            showToast("Berhasil mengekspor data rekap ke Excel!");
+        }
+
+        function exportExcelFile() {
+            const dataToExport = state.children.map((c, idx) => ({
+                No: idx + 1,
+                'Nama Lengkap': c.name,
+                'Jenis Kelamin': c.gender,
+                'Tanggal Lahir': c.birthDate,
+                'Usia (Tahun)': calculateAge(c.birthDate),
+                'Jenis Disabilitas': c.disability || '-',
+                Kelas: c.classLevel,
+                'Tingkat Pendidikan': c.education,
+                Domisili: c.domicile
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Data Anak Yayasan");
+            XLSX.writeFile(workbook, "Pendataan_Anak_Yayasan_Karya_Murni.xlsx");
+            showToast("Berhasil mendownload data ke Excel!");
+        }
+
+        function importExcelFile(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    const data = new Uint8Array(evt.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet);
+
+                    const imported = json.map((row, idx) => ({
+                        id: String(Date.now() + idx),
+                        name: row['Nama Lengkap'] || row['nama'] || row['Name'] || 'Tanpa Nama',
+                        birthDate: row['Tanggal Lahir'] || row['tanggal_lahir'] || '2012-01-01',
+                        gender: row['Jenis Kelamin'] || row['gender'] || 'Laki-laki',
+                        disability: row['Jenis Disabilitas'] || row['disability'] || row['disabilitas'] || '',
+                        classLevel: row['Kelas'] || row['kelas'] || '-',
+                        education: row['Tingkat Pendidikan'] || row['pendidikan'] || 'SD',
+                        domicile: row['Domisili'] || row['domisili'] || 'Ruteng'
+                    }));
+
+                    state.children = [...state.children, ...imported];
+                    saveState();
+                    showToast(`Berhasil mengimpor ${imported.length} data anak!`);
+                    render();
+                } catch (err) {
+                    showToast("Gagal membaca file Excel!", "error");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function attachEvents() {
+            const loginForm = document.getElementById('login-form');
+            if (loginForm) {
+                loginForm.onsubmit = function(e) {
+                    e.preventDefault();
+                    const u = document.getElementById('login-user').value;
+                    const p = document.getElementById('login-pass').value;
+
+                    if (u === state.credentials.user && p === state.credentials.pass) {
+                        state.currentUser = u;
+                        showToast("Berhasil masuk ke dashboard!");
+                        render();
+                    } else {
+                        showToast("Username atau Password salah!", "error");
+                    }
+                };
+            }
+
+            const logoutBtn = document.getElementById('btn-logout');
+            if (logoutBtn) {
+                logoutBtn.onclick = function() {
+                    state.currentUser = null;
+                    showToast("Berhasil keluar.");
+                    render();
+                };
+            }
+
+            const childForm = document.getElementById('child-form');
+            if (childForm) {
+                childForm.onsubmit = function(e) {
+                    e.preventDefault();
+                    const name = document.getElementById('modal-name').value;
+                    const birthDate = document.getElementById('modal-birth').value;
+                    const gender = document.getElementById('modal-gender').value;
+                    const disability = document.getElementById('modal-disability').value;
+                    const classLevel = document.getElementById('modal-class').value;
+                    const education = document.getElementById('modal-education').value;
+                    const domicile = document.getElementById('modal-domicile').value;
+
+                    if (state.editingChild) {
+                        state.children = state.children.map(c => c.id === state.editingChild.id ? { ...c, name, birthDate, gender, disability, classLevel, education, domicile } : c);
+                        showToast("Data anak berhasil diperbarui!");
+                    } else {
+                        const newChild = { id: String(Date.now()), name, birthDate, gender, disability, classLevel, education, domicile };
+                        state.children.push(newChild);
+                        showToast("Data anak berhasil ditambahkan!");
+                    }
+
+                    saveState();
+                    closeModal();
+                    render();
+                };
+            }
+
+            const verifyForm = document.getElementById('verify-form');
+            if (verifyForm) {
+                verifyForm.onsubmit = function(e) {
+                    e.preventDefault();
+                    const passInput = document.getElementById('verify-pass-input').value;
+
+                    if (passInput === state.credentials.pass) {
+                        const action = state.pendingAction;
+                        closeVerifyModal();
+
+                        if (action.type === 'edit') {
+                            state.editingChild = state.children.find(c => c.id === action.id);
+                            state.modalOpen = true;
+                            render();
+                        } else if (action.type === 'delete') {
+                            state.children = state.children.filter(c => c.id !== action.id);
+                            saveState();
+                            showToast("Data anak berhasil dihapus!");
+                            render();
+                        } else if (action.type === 'deleteAll') {
+                            state.children = [];
+                            saveState();
+                            showToast("Semua data anak berhasil dihapus!");
+                            render();
+                        }
+                    } else {
+                        state.verifyError = "Password aplikasi salah!";
+                        render();
+                    }
+                };
+            }
+
+            const settingsForm = document.getElementById('settings-form');
+            if (settingsForm) {
+                settingsForm.onsubmit = function(e) {
+                    e.preventDefault();
+                    const name = document.getElementById('set-name').value;
+                    const subtitle = document.getElementById('set-subtitle').value;
+                    const newUser = document.getElementById('set-user').value;
+                    const newPass = document.getElementById('set-pass').value;
+
+                    state.settings.foundationName = name;
+                    state.settings.foundationSubtitle = subtitle;
+                    state.credentials.user = newUser;
+                    if (newPass) {
+                        state.credentials.pass = newPass;
+                    }
+
+                    const logoFile = document.getElementById('set-logo-file').files[0];
+                    if (logoFile) {
+                        convertImageFileToJpeg(logoFile, function(jpegData) {
+                            state.settings.logoUrl = jpegData;
+                            saveState();
+                            showToast("Pengaturan dan logo berhasil disimpan!");
+                            render();
+                        });
+                    } else {
+                        saveState();
+                        showToast("Pengaturan berhasil disimpan!");
+                        render();
+                    }
+                };
+            }
+
+            const mainSearch = document.getElementById('main-search-input');
+            if (mainSearch) {
+                mainSearch.oninput = function(e) {
+                    state.filterSearch = e.target.value;
+                };
+            }
+
+            const mainAgeMin = document.getElementById('main-agemin-input');
+            if (mainAgeMin) {
+                mainAgeMin.oninput = function(e) {
+                    state.filterAgeMin = e.target.value;
+                };
+            }
+
+            const mainAgeMax = document.getElementById('main-agemax-input');
+            if (mainAgeMax) {
+                mainAgeMax.oninput = function(e) {
+                    state.filterAgeMax = e.target.value;
+                };
+            }
+
+            const drillSearch = document.getElementById('drill-search-input');
+            if (drillSearch) {
+                drillSearch.oninput = function(e) {
+                    state.drillDownModal.search = e.target.value;
+                };
+            }
+
+            const drillAgeMin = document.getElementById('drill-agemin-input');
+            if (drillAgeMin) {
+                drillAgeMin.oninput = function(e) {
+                    state.drillDownModal.ageMin = e.target.value;
+                };
+            }
+
+            const drillAgeMax = document.getElementById('drill-agemax-input');
+            if (drillAgeMax) {
+                drillAgeMax.oninput = function(e) {
+                    state.drillDownModal.ageMax = e.target.value;
+                };
+            }
+        }
+
+        window.onload = function() {
+            render();
+        };
+    </script>
+</body>
+</html>
